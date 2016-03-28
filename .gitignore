@@ -1,5 +1,3 @@
-### Haskell template
-dist
 cabal-dev
 *.chi
 *.chs.h

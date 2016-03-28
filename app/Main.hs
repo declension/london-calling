@@ -1,38 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Main (main) where
 
-import Data.String (fromString)
-import Data.Maybe
-import System.Environment (lookupEnv, getArgs)
-import Data.List (intercalate)
-import Data.Time
-import Data.Vector (toList)
-import GitHub.Endpoints.Repos.Commits as Github
-import Data.Text as T (unpack)
+import           Control.Logging
+import           Control.Applicative
+import           Data.Maybe
+import           Data.Monoid
+import           Data.Tagged
+import qualified Data.Text as T
+import           Git
+import           Git.Libgit2 (MonadLg, LgRepo, lgFactory)
 
-main = do
-  auth <- getAuth
-  putStrLn "Found token, starting request..."
-  possibleCommits <- Github.commitsWithOptionsFor' auth "quodlibet" "quodlibet" [CommitQueryAuthor "declension"]
-  case possibleCommits of
-    (Left error)    -> putStrLn $ "Error: " ++ show error
-    (Right commits) -> putStrLn $ intercalate "\n\n" $ map formatCommit $ toList commits
-
-formatCommit :: Github.Commit -> String
-formatCommit commit =
-  "Commit: " ++ show (Github.commitSha commit) ++
---     "\nAuthor: " ++ formatAuthor author ++
-  "\nDate:   " ++ show (Github.gitUserDate author) ++
-  "\n\n" ++ T.unpack (Github.gitCommitMessage gitCommit)
-  where author = Github.gitCommitAuthor gitCommit
-        gitCommit = Github.commitGitCommit commit
-
-formatAuthor :: Github.GitUser -> String
-formatAuthor author =
-  T.unpack (Github.gitUserName author) ++ " <" ++ T.unpack (Github.gitUserEmail author) ++ ">"
-
-
-getAuth :: IO (Maybe Github.Auth)
-getAuth = do
-    token <- lookupEnv "GITHUB_TOKEN"
-    pure (Github.OAuth . fromString <$> token)
+main = withStdoutLogging $ do
+    log' "Starting"
+    let repoOpts = RepositoryOptions { repoPath = "."
+                                     , repoWorkingDir = Nothing
+                                     , repoIsBare = False
+                                     , repoAutoCreate = False
+                                     }
+    let dir = "."
+    withRepository lgFactory dir $ do
+        ref <- lookupReference "HEAD"
+        ref' <- resolveReference "HEAD"
+        case ref' of
+            Just r -> do
+                log' $ "Got refs: " <> T.pack (show r)
+                commit   <- lookupCommit (Tagged r)
+                commits <- listCommits Nothing (commitOid commit)
+                log' "Here are the commits: "
+                mapM_ (log' . T.pack . show) commits
+            _ -> log' "No branch is checked out"
+    log' "Finished"

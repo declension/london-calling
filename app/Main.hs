@@ -20,10 +20,10 @@ main = do
 
 formatCommit :: Github.Commit -> String
 formatCommit commit =
-  "commit " ++ show (Github.commitSha commit) ++
-    "\nAuthor: " ++ formatAuthor author ++
-    "\nDate:   " ++ show (Github.gitUserDate author) ++
-    "\n\n\t" ++ T.unpack (Github.gitCommitMessage gitCommit)
+  "Commit: " ++ show (Github.commitSha commit) ++
+--     "\nAuthor: " ++ formatAuthor author ++
+  "\nDate:   " ++ show (Github.gitUserDate author) ++
+  "\n\n" ++ T.unpack (Github.gitCommitMessage gitCommit)
   where author = Github.gitCommitAuthor gitCommit
         gitCommit = Github.commitGitCommit commit
 

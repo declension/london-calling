@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Main (main) where
 
@@ -10,11 +11,11 @@ import           Control.Monad.Trans.State
 import           Data.Monoid
 import           Data.Tagged
 import qualified Data.Text as T
+import           Text.Printf
 import           Git
 import           Git.Libgit2 (MonadLg, lgFactory)
 
 main = withStdoutLogging $ do
-    log' "Starting"
     let dir = "."
     withRepository lgFactory dir $ do
         ref' <- resolveReference "HEAD"
@@ -34,6 +35,9 @@ main = withStdoutLogging $ do
 getMessage :: MonadGit r m => CommitOid r -> m T.Text
 getMessage commitOid = do
     commit <- lookupCommit commitOid
-    let text = show (commitLog commit)
-    let str = "Commit " ++ show (untag commitOid) ++ ": " ++ text
+    let text = commitLog commit
+    let author = commitAuthor commit
+    let email = signatureEmail author
+    let time = show $ signatureWhen author
+    let str = printf "Commit %v @ %v: %v (%v)" (show $ untag commitOid) time text email
     return $ T.pack str

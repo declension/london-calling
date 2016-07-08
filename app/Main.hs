@@ -19,10 +19,15 @@ import           Cli
 runApp :: CliOptions -> IO ()
 runApp (CliOptions dir isQuiet) = withStdoutLogging $ do
    withRepository lgFactory dir $ do
-       ref' <- resolveReference "HEAD"
-       case ref' of
+       refTarget <- lookupReference "HEAD"
+       let maybeBranch = case refTarget of
+            Just (RefSymbolic name) -> Just name
+            _ -> Nothing
+       maybeOid <- resolveReference "HEAD"
+       case maybeOid of
            Just r -> do
-               log' $ T.pack $ "Got refs: " ++ show r
+               let branch = fromMaybe "(unknown)" maybeBranch
+               log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
                commit   <- lookupCommit (Tagged r)
                log' $ T.pack $ show $ commitLog commit
                commits <- listCommits Nothing (commitOid commit)
@@ -43,7 +48,12 @@ getMessage commitOid = do
     commit <- lookupCommit commitOid
     let text = commitLog commit
     let author = commitAuthor commit
+    let branch = case commitRefTarget commit of
+                     RefSymbolic name -> show name
+                     RefObj oid -> show oid
+
     let email = signatureEmail author
     let time = show $ signatureWhen author
-    let str = printf "Commit %v @ %v: %v (%v)" (show $ untag commitOid) time text email
+    let commit = take 7 $ show $ untag commitOid
+    let str = printf "Commit %-7s @ %v: %v (%v)" commit time text email
     return $ T.pack str

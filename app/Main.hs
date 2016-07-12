@@ -4,12 +4,14 @@ module Main (main) where
 
 import           Control.Logging
 import           Control.Applicative
+import           Control.Monad.Trans.Maybe
 import           Data.Maybe
 import           Control.Monad
 import           Control.Monad.Trans.State
 import           Data.Monoid
 import           Data.Tagged
 import qualified Data.Text as T
+import           Data.Time (formatTime, knownTimeZones, defaultTimeLocale, ZonedTime)
 import           Options.Applicative
 import           Text.Printf
 import           Git
@@ -33,7 +35,7 @@ runApp (CliOptions dir isQuiet) = withStdoutLogging $ do
                commits <- listCommits Nothing (commitOid commit)
                log' "Here are the commits: "
                msgs <- mapM getMessage commits
-               mapM_ log' msgs
+               mapM_ log' $ catMaybes msgs
            _ -> log' "No branch is checked out"
    log' "Finished"
 
@@ -43,17 +45,30 @@ main = execParser opts >>= runApp
           (fullDesc <> progDesc "Analysis for London-style© commits in a Git repo")
 
 
-getMessage :: MonadGit r m => CommitOid r -> m T.Text
+-- Format a human text message from a given CommitOid
+getMessage :: MonadGit r m => CommitOid r -> m (Maybe T.Text)
 getMessage commitOid = do
     commit <- lookupCommit commitOid
-    let text = commitLog commit
+    let text = head $ T.lines $ commitLog commit
     let author = commitAuthor commit
+    let committer = signatureEmail $ commitCommitter commit
+    let isMerge = length (commitParents commit) > 1
     let branch = case commitRefTarget commit of
                      RefSymbolic name -> show name
                      RefObj oid -> show oid
 
     let email = signatureEmail author
-    let time = show $ signatureWhen author
     let commit = take 7 $ show $ untag commitOid
-    let str = printf "Commit %-7s @ %v: %v (%v)" commit time text email
-    return $ T.pack str
+    let category = if isMerge then "Merge"::T.Text else "Commit"
+    let warning = if committer /= email && not isMerge then T.pack ("(SQUASHED by "  ++ show committer ++ ") ")
+                                                       else ""
+    let str = printf "%s %-7s @ %v: %s%v (%v)" category commit (printTime $ signatureWhen author) warning text email
+    return $ if isMerge || isExcluded email then Nothing
+                                            else Just $ T.pack str
+
+printTime:: ZonedTime -> String
+printTime = formatTime defaultTimeLocale "%Y-%m-%d"
+
+isExcluded :: CommitEmail -> Bool
+isExcluded email = email `elem` ["servbot9000@crowdmix.me"]
+-- Validate all non-merge commits are found earlier on a non-`master` branch

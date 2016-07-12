@@ -18,6 +18,9 @@ import           Git
 import           Git.Libgit2 (MonadLg, lgFactory)
 import           Cli
 
+infixr +++
+(+++) l r = l `T.append` r
+
 runApp :: CliOptions -> IO ()
 runApp (CliOptions dir isQuiet) = withStdoutLogging $ do
    withRepository lgFactory dir $ do
@@ -61,8 +64,7 @@ getMessage commitOid = do
 
     let commit = take 7 $ show $ untag commitOid
     let category = if isMerge then "Merge"::T.Text else "Commit"
-
-    let warning = if committer /= author && not isMerge then T.pack ("(SQUASHED by "  ++ show committer ++ ") ")
+    let warning = if committer /= author && not isMerge then "(SQUASHED by "  +++ committer +++ ") "
                                                         else ""
     let str = printf "%s %-7s @ %v: %s%v (%v)" category commit time warning text author
     return $ if isMerge || isExcluded author then Nothing

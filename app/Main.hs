@@ -50,25 +50,28 @@ getMessage :: MonadGit r m => CommitOid r -> m (Maybe T.Text)
 getMessage commitOid = do
     commit <- lookupCommit commitOid
     let text = head $ T.lines $ commitLog commit
-    let author = commitAuthor commit
+    let authorSig = commitAuthor commit
+    let time = printTime $ signatureWhen authorSig
+    let author = signatureEmail authorSig
     let committer = signatureEmail $ commitCommitter commit
     let isMerge = length (commitParents commit) > 1
     let branch = case commitRefTarget commit of
                      RefSymbolic name -> show name
                      RefObj oid -> show oid
 
-    let email = signatureEmail author
     let commit = take 7 $ show $ untag commitOid
     let category = if isMerge then "Merge"::T.Text else "Commit"
-    let warning = if committer /= email && not isMerge then T.pack ("(SQUASHED by "  ++ show committer ++ ") ")
-                                                       else ""
-    let str = printf "%s %-7s @ %v: %s%v (%v)" category commit (printTime $ signatureWhen author) warning text email
-    return $ if isMerge || isExcluded email then Nothing
-                                            else Just $ T.pack str
+
+    let warning = if committer /= author && not isMerge then T.pack ("(SQUASHED by "  ++ show committer ++ ") ")
+                                                        else ""
+    let str = printf "%s %-7s @ %v: %s%v (%v)" category commit time warning text author
+    return $ if isMerge || isExcluded author then Nothing
+                                             else Just $ T.pack str
 
 printTime:: ZonedTime -> String
 printTime = formatTime defaultTimeLocale "%Y-%m-%d"
 
 isExcluded :: CommitEmail -> Bool
 isExcluded email = email `elem` ["servbot9000@crowdmix.me"]
--- Validate all non-merge commits are found earlier on a non-`master` branch
+
+-- TODO: Validate all non-merge commits are found earlier on a non-`master` branch

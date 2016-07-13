@@ -2,15 +2,17 @@
 
 module Main (main) where
 
-import           Control.Logging
+import           Control.Logging (withStderrLogging, log')
 import           Control.Applicative
 import           Control.Monad.Trans.Maybe
 import           Data.Maybe
 import           Control.Monad
 import           Control.Monad.Trans.State
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Monoid
 import           Data.Tagged
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import           Data.Time (formatTime, knownTimeZones, defaultTimeLocale, ZonedTime)
 import           Options.Applicative
 import           Text.Printf
@@ -22,7 +24,7 @@ infixr +++
 (+++) l r = l `T.append` r
 
 runApp :: CliOptions -> IO ()
-runApp (CliOptions dir isQuiet) = withStdoutLogging $ do
+runApp (CliOptions dir isQuiet) = withStderrLogging $ do
    withRepository lgFactory dir $ do
        refTarget <- lookupReference "HEAD"
        let maybeBranch = case refTarget of
@@ -34,11 +36,10 @@ runApp (CliOptions dir isQuiet) = withStdoutLogging $ do
                let branch = fromMaybe "(unknown)" maybeBranch
                log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
                commit   <- lookupCommit (Tagged r)
-               log' $ T.pack $ show $ commitLog commit
                commits <- listCommits Nothing (commitOid commit)
                log' "Here are the commits: "
                msgs <- mapM getMessage commits
-               mapM_ log' $ catMaybes msgs
+               mapM_ (liftIO . TIO.putStrLn) $ catMaybes msgs
            _ -> log' "No branch is checked out"
    log' "Finished"
 
@@ -81,6 +82,7 @@ mergeBranchCommits _ = return []
 printTime:: ZonedTime -> String
 printTime = formatTime defaultTimeLocale "%Y-%m-%d"
 
+-- Not everyone is worth looking at, so exclude known bots etc
 isExcluded :: CommitEmail -> Bool
 isExcluded email = email `elem` ["servbot9000@crowdmix.me"]
 

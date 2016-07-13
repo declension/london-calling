@@ -24,7 +24,7 @@ infixr +++
 (+++) l r = l `T.append` r
 
 runApp :: CliOptions -> IO ()
-runApp (CliOptions dir isQuiet) = withStderrLogging $ do
+runApp (CliOptions excludes verbose dir) = withStderrLogging $ do
    withRepository lgFactory dir $ do
        refTarget <- lookupReference "HEAD"
        let maybeBranch = case refTarget of
@@ -33,22 +33,23 @@ runApp (CliOptions dir isQuiet) = withStderrLogging $ do
        maybeOid <- resolveReference "HEAD"
        case maybeOid of
            Just r -> do
+               when verbose $ log' $ "Excluding these emails: " +++ T.intercalate ", " excludes
                let branch = fromMaybe "(unknown)" maybeBranch
-               log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
+               when verbose $ log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
                commit   <- lookupCommit (Tagged r)
                commits <- listCommits Nothing (commitOid commit)
-               tuples  <- mapM branchCommits commits
+               tuples  <- mapM (processCommits excludes) commits
                let branchComs = concatMap snd tuples
                let realCommits = mapMaybe fst tuples
                branchHashes <- listHashes branchComs
-               log' ("Got these branch commits: " +++ branchHashes)
+               when verbose $ log' ("Got these branch commits: " +++ branchHashes)
                let dodgyCommits = filter (isKnownBranch branchComs) realCommits
-               log' $ T.pack $ printf "%d dodgy commits found out of %d non-merge commits"
-                                      (length dodgyCommits) (length realCommits)
+               when verbose $ log' $ T.pack $ printf "%d dodgy commits found out of %d non-merge commits"
+                                              (length dodgyCommits) (length realCommits)
                pretty <- mapM formatCommit dodgyCommits
                mapM_ (liftIO . TIO.putStrLn) pretty
            _ -> log' "No branch is checked out"
-   log' "Finished"
+   when verbose $ log' "Finished"
 
 isKnownBranch :: Eq a => [a] -> a -> Bool
 isKnownBranch = flip notElem
@@ -56,13 +57,14 @@ isKnownBranch = flip notElem
 listHashes :: MonadGit r m => [CommitOid r] -> m T.Text
 listHashes commits = do
     hashes <- mapM (fmap T.pack . shortened) commits
-    return $ T.intercalate "," hashes
+    return $ T.intercalate ", " hashes
 
 
--- Split a commit into a potential
-branchCommits :: MonadGit r m => CommitOid r                              -- One to look into
+-- Split a commit into a candidate (or Nothing) or a list of any merged commits it included
+processCommits :: MonadGit r m => [T.Text]                                  -- Excluded emails
+                              -> CommitOid r                                -- One to look into
                               -> m (Maybe (CommitOid r), [CommitOid r])     -- A commit to keep, list of branch commits
-branchCommits commitOid = do
+processCommits excludes commitOid = do
     commit <- lookupCommit commitOid
     let authorSig = commitAuthor commit
     let author = signatureEmail authorSig
@@ -72,11 +74,10 @@ branchCommits commitOid = do
     branchCommits <- mergeBranchCommits parents
     let isMerge = not $ null branchCommits
     let result
-          | isMerge                                  = (Nothing, branchCommits)
-          | isExcluded author || committer /= author = (Nothing, [])
-          | otherwise                                = (Just commitOid, [])
+          | isMerge                                           = (Nothing, branchCommits)
+          | isExcluded excludes author || committer /= author = (Nothing, [])
+          | otherwise                                         = (Just commitOid, [])
     return result
-
 
 
 -- Look up info for the given CommitOid and format nicely
@@ -112,10 +113,10 @@ printTime:: ZonedTime -> String
 printTime = formatTime defaultTimeLocale "%Y-%m-%d"
 
 -- Not everyone is worth looking at, so exclude known bots etc
-isExcluded :: CommitEmail -> Bool
-isExcluded email = email `elem` ["servbot9000@crowdmix.me"]
+isExcluded :: [T.Text] -> CommitEmail -> Bool
+isExcluded excludes email = email `elem` excludes
 
-
+main :: IO ()
 main = execParser opts >>= runApp
     where
         opts = info (helper <*> cliOptions)

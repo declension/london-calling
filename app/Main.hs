@@ -57,18 +57,17 @@ getMessage commitOid = do
     let time = printTime $ signatureWhen authorSig
     let author = signatureEmail authorSig
     let committer = signatureEmail $ commitCommitter commit
-    let isMerge = length (commitParents commit) > 1
-    let branch = case commitRefTarget commit of
-                     RefSymbolic name -> show name
-                     RefObj oid -> show oid
+    let parents = commitParents commit
+    let pCommits = T.intercalate "," $ map (T.pack . show) parents
+    let isMerge = length parents > 1
 
     let commit = take 7 $ show $ untag commitOid
     let category = if isMerge then "Merge"::T.Text else "Commit"
     let warning = if committer /= author && not isMerge then "(SQUASHED by "  +++ committer +++ ") "
                                                         else ""
-    let str = printf "%s %-7s @ %v: %s%v (%v)" category commit time warning text author
-    return $ if isMerge || isExcluded author then Nothing
-                                             else Just $ T.pack str
+    let str = printf "%s %-7s (%s) @ %v: %s%v (%v)" category commit pCommits time warning text author
+    return $ if isExcluded author then Nothing
+                                  else Just $ T.pack str
 
 printTime:: ZonedTime -> String
 printTime = formatTime defaultTimeLocale "%Y-%m-%d"

@@ -37,15 +37,16 @@ runApp (CliOptions dir isQuiet) = withStderrLogging $ do
                log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
                commit   <- lookupCommit (Tagged r)
                commits <- listCommits Nothing (commitOid commit)
-               branchComs <- foldM branchCommits [] commits
-               foo <- listHashes branchComs
-               log' ("Got these branch commits: " +++ foo)
-               let dodgyCommits = filter (isKnownBranch branchComs) commits
-               dodgyHashes <- listHashes dodgyCommits
-               log' $ T.pack $ printf "%d dodgy commits found out of %d" (length dodgyCommits) (length commits)
-               liftIO (TIO.putStr "Here they are: ")
-               liftIO (TIO.putStrLn dodgyHashes)
-               return ()
+               tuples  <- mapM branchCommits commits
+               let branchComs = concatMap snd tuples
+               let realCommits = mapMaybe fst tuples
+               branchHashes <- listHashes branchComs
+               log' ("Got these branch commits: " +++ branchHashes)
+               let dodgyCommits = filter (isKnownBranch branchComs) realCommits
+               log' $ T.pack $ printf "%d dodgy commits found out of %d non-merge commits"
+                                      (length dodgyCommits) (length realCommits)
+               pretty <- mapM formatCommit dodgyCommits
+               mapM_ (liftIO . TIO.putStrLn) pretty
            _ -> log' "No branch is checked out"
    log' "Finished"
 
@@ -57,67 +58,56 @@ listHashes commits = do
     hashes <- mapM (fmap T.pack . shortened) commits
     return $ T.intercalate "," hashes
 
-main = execParser opts >>= runApp
-    where
-        opts = info (helper <*> cliOptions)
-          (fullDesc <> progDesc "Analysis for London-style© commits in a Git repo")
 
-
--- Format a human text message from a given CommitOid
-getMessage :: MonadGit r m => CommitOid r -> m (Maybe T.Text)
-getMessage commitOid = do
+-- Split a commit into a potential
+branchCommits :: MonadGit r m => CommitOid r                              -- One to look into
+                              -> m (Maybe (CommitOid r), [CommitOid r])     -- A commit to keep, list of branch commits
+branchCommits commitOid = do
     commit <- lookupCommit commitOid
-    let text = head $ T.lines $ commitLog commit
+    let authorSig = commitAuthor commit
+    let author = signatureEmail authorSig
+    let committer = signatureEmail $ commitCommitter commit
+
+    let parents = commitParents commit
+    branchCommits <- mergeBranchCommits parents
+    let isMerge = not $ null branchCommits
+    let result
+          | isMerge                                  = (Nothing, branchCommits)
+          | isExcluded author || committer /= author = (Nothing, [])
+          | otherwise                                = (Just commitOid, [])
+    return result
+
+
+
+-- Look up info for the given CommitOid and format nicely
+formatCommit :: MonadGit r m => CommitOid r -> m T.Text
+formatCommit commitOid = do
+    commit <- lookupCommit commitOid
+    let headline = head $ T.lines $ commitLog commit
     let authorSig = commitAuthor commit
     let time = printTime $ signatureWhen authorSig
     let author = signatureEmail authorSig
     let committer = signatureEmail $ commitCommitter commit
-
-    let parents = commitParents commit
-    branchCommits <- mergeBranchCommits parents
-    let isMerge = not $ null branchCommits
-    commitList <- mapM (fmap T.pack . shortened) branchCommits
-    let pCommits = if isMerge then printf "(%d commit(s): %s) " (length branchCommits) (T.intercalate ", " commitList)
-                              else ""
-
+    let isMerge = length (commitParents commit) > 1
     shortHash <- shortened commitOid
-    let category = if isMerge then " Merge" else "Commit" :: T.Text
     let extra
-          | isMerge = pCommits
-          | committer /= author = "(SQUASHED by " ++ T.unpack committer ++ ") "
+          | committer /= author = ", committed by " ++ T.unpack committer
           | otherwise = ""
-
-    let str = printf "%s %-7s\t%v\t%s\t%s\t(%v)" category shortHash time extra text author
-    return $ if isExcluded author then Nothing
-                                  else Just $ T.pack str
-
-
-branchCommits :: MonadGit r m => [CommitOid r]                        -- Known merged branch commits
-                              -> CommitOid r                        -- One to look into
-                              -> m [CommitOid r]                    -- Updated branch commits
-branchCommits curBranchCommits commitOid = do
-    commit <- lookupCommit commitOid
-    let authorSig = commitAuthor commit
-    let author = signatureEmail authorSig
-    let committer = signatureEmail $ commitCommitter commit
-
-    let parents = commitParents commit
-    branchCommits <- mergeBranchCommits parents
-    let isMerge = not $ null branchCommits
-    return $ if isExcluded author || committer /= author
-        then curBranchCommits
-        else curBranchCommits ++ branchCommits
+    let str = printf "%-7s\t%s\t%s\t(%v%s)" shortHash time headline author extra
+    return $ T.pack str
 
 
 -- A nice, Github-style commit extractor
 shortened :: MonadGit r m => CommitOid r -> m String
 shortened = return . take 7 . show . untag
 
+
 -- For each merge commit, pull the history of that branch and return as a list of IDs
 mergeBranchCommits :: MonadGit r m => [CommitOid r] -> m [CommitOid r]
 mergeBranchCommits (mum : dad : _) = listCommits (Just mum) dad
 mergeBranchCommits _ = return []
 
+-- Default formatting is too long / ugly...
 printTime:: ZonedTime -> String
 printTime = formatTime defaultTimeLocale "%Y-%m-%d"
 
@@ -125,4 +115,8 @@ printTime = formatTime defaultTimeLocale "%Y-%m-%d"
 isExcluded :: CommitEmail -> Bool
 isExcluded email = email `elem` ["servbot9000@crowdmix.me"]
 
--- TODO: Validate all non-merge commits are found earlier on a non-`master` branch
+
+main = execParser opts >>= runApp
+    where
+        opts = info (helper <*> cliOptions)
+          (fullDesc <> progDesc "Analysis for London-style© commits in a Git repo")

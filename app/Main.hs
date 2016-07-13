@@ -57,17 +57,26 @@ getMessage commitOid = do
     let time = printTime $ signatureWhen authorSig
     let author = signatureEmail authorSig
     let committer = signatureEmail $ commitCommitter commit
+
     let parents = commitParents commit
-    let pCommits = T.intercalate "," $ map (T.pack . show) parents
-    let isMerge = length parents > 1
+    branchCommits <- mergeBranchCommits parents
+    let isMerge = not $ null branchCommits
+    let pCommits = if isMerge then printf " (%d commit(s): %v)" (length branchCommits) (show commitList)
+                              else "" :: String
+                              where commitList = map (take 7 . drop 7 . show) branchCommits
 
     let commit = take 7 $ show $ untag commitOid
-    let category = if isMerge then "Merge"::T.Text else "Commit"
+    let category = if isMerge then "Merge" else "Commit"::T.Text
     let warning = if committer /= author && not isMerge then "(SQUASHED by "  +++ committer +++ ") "
                                                         else ""
-    let str = printf "%s %-7s (%s) @ %v: %s%v (%v)" category commit pCommits time warning text author
+    let str = printf "%s %-7s%s @ %v: %s%v (%v)" category commit pCommits time warning text author
     return $ if isExcluded author then Nothing
                                   else Just $ T.pack str
+
+-- For each merge commit, pull the history of that branch and return as a list of IDs
+mergeBranchCommits :: MonadGit r m => [CommitOid r] -> m [CommitOid r]
+mergeBranchCommits (mum : dad : _) = listCommits (Just mum) dad
+mergeBranchCommits _ = return []
 
 printTime:: ZonedTime -> String
 printTime = formatTime defaultTimeLocale "%Y-%m-%d"

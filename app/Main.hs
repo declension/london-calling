@@ -37,11 +37,25 @@ runApp (CliOptions dir isQuiet) = withStderrLogging $ do
                log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
                commit   <- lookupCommit (Tagged r)
                commits <- listCommits Nothing (commitOid commit)
-               log' "Here are the commits: "
-               msgs <- mapM getMessage commits
-               mapM_ (liftIO . TIO.putStrLn) $ catMaybes msgs
+               branchComs <- foldM branchCommits [] commits
+               foo <- listHashes branchComs
+               log' ("Got these branch commits: " +++ foo)
+               let dodgyCommits = filter (isKnownBranch branchComs) commits
+               dodgyHashes <- listHashes dodgyCommits
+               log' $ T.pack $ printf "%d dodgy commits found out of %d" (length dodgyCommits) (length commits)
+               liftIO (TIO.putStr "Here they are: ")
+               liftIO (TIO.putStrLn dodgyHashes)
+               return ()
            _ -> log' "No branch is checked out"
    log' "Finished"
+
+isKnownBranch :: Eq a => [a] -> a -> Bool
+isKnownBranch = flip notElem
+
+listHashes :: MonadGit r m => [CommitOid r] -> m T.Text
+listHashes commits = do
+    hashes <- mapM (fmap T.pack . shortened) commits
+    return $ T.intercalate "," hashes
 
 main = execParser opts >>= runApp
     where
@@ -76,6 +90,24 @@ getMessage commitOid = do
     let str = printf "%s %-7s\t%v\t%s\t%s\t(%v)" category shortHash time extra text author
     return $ if isExcluded author then Nothing
                                   else Just $ T.pack str
+
+
+branchCommits :: MonadGit r m => [CommitOid r]                        -- Known merged branch commits
+                              -> CommitOid r                        -- One to look into
+                              -> m [CommitOid r]                    -- Updated branch commits
+branchCommits curBranchCommits commitOid = do
+    commit <- lookupCommit commitOid
+    let authorSig = commitAuthor commit
+    let author = signatureEmail authorSig
+    let committer = signatureEmail $ commitCommitter commit
+
+    let parents = commitParents commit
+    branchCommits <- mergeBranchCommits parents
+    let isMerge = not $ null branchCommits
+    return $ if isExcluded author || committer /= author
+        then curBranchCommits
+        else curBranchCommits ++ branchCommits
+
 
 -- A nice, Github-style commit extractor
 shortened :: MonadGit r m => CommitOid r -> m String

@@ -62,17 +62,24 @@ getMessage commitOid = do
     let parents = commitParents commit
     branchCommits <- mergeBranchCommits parents
     let isMerge = not $ null branchCommits
-    let pCommits = if isMerge then printf " (%d commit(s): %v)" (length branchCommits) (show commitList)
-                              else "" :: String
-                              where commitList = map (take 7 . drop 7 . show) branchCommits
+    commitList <- mapM (fmap T.pack . shortened) branchCommits
+    let pCommits = if isMerge then printf "(%d commit(s): %s) " (length branchCommits) (T.intercalate ", " commitList)
+                              else ""
 
-    let commit = take 7 $ show $ untag commitOid
-    let category = if isMerge then "Merge" else "Commit"::T.Text
-    let warning = if committer /= author && not isMerge then "(SQUASHED by "  +++ committer +++ ") "
-                                                        else ""
-    let str = printf "%s %-7s%s @ %v: %s%v (%v)" category commit pCommits time warning text author
+    shortHash <- shortened commitOid
+    let category = if isMerge then " Merge" else "Commit" :: T.Text
+    let extra
+          | isMerge = pCommits
+          | committer /= author = "(SQUASHED by " ++ T.unpack committer ++ ") "
+          | otherwise = ""
+
+    let str = printf "%s %-7s\t%v\t%s\t%s\t(%v)" category shortHash time extra text author
     return $ if isExcluded author then Nothing
                                   else Just $ T.pack str
+
+-- A nice, Github-style commit extractor
+shortened :: MonadGit r m => CommitOid r -> m String
+shortened = return . take 7 . show . untag
 
 -- For each merge commit, pull the history of that branch and return as a list of IDs
 mergeBranchCommits :: MonadGit r m => [CommitOid r] -> m [CommitOid r]

@@ -61,6 +61,7 @@ listHashes commits = do
 
 
 -- Split a commit into a candidate (or Nothing) or a list of any merged commits it included
+-- TODO: migrate to Either CommitOid [CommitOid]?
 processCommits :: MonadGit r m => [T.Text]                                  -- Excluded emails
                               -> CommitOid r                                -- One to look into
                               -> m (Maybe (CommitOid r), [CommitOid r])     -- A commit to keep, list of branch commits

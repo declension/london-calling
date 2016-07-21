@@ -11,20 +11,18 @@ that **don't** meet **any** of these criteria:
 
 ## How?
 
-```bash
-$ london-calling --exclude bad@robot.org ~/workspace/quodlibet
-...
-6020694	2016-07-10	Ratings menu: only show checkmarks for songs with ratings	(me@example.com)
-2f6b13f	2016-07-12	Add an MQTT publishing event plugin.	(me@example.com)
-62d83b0	2016-07-12	Remove unused imports	(me@example.com)
-```
+    $ london-calling --exclude bad@robot.org ~/workspace/quodlibet
+    ...
+    6020694	2016-07-10	Ratings menu: only show checkmarks for songs with ratings	(me@example.com)
+    2f6b13f	2016-07-12	Add an MQTT publishing event plugin.	(me@example.com)
+    62d83b0	2016-07-12	Remove unused imports	(me@example.com)
 
 ## But how do I build it?
 Assuming you have [Stack](http://docs.haskellstack.org/en/stable/README/) set up (and your `~/.local/bin` in your path),
 you just need to:
 
 ```shell
-stack build && stack install
+$ stack build && stack install
 ```
 
 That was easy.
@@ -51,7 +49,7 @@ so you may need to wait a few seconds (or even minutes...)
 
 ## What's this thing written in then?
 [Haskell](https://haskell-lang.org/), because it's equal parts wonderful and brain-meltingly infuriating (for newbies like myself at least)
-It's built in the game-changing [Stack](http://docs.haskellstack.org/en/stable/README/) because it's made Haskell ~~bearable~~ **fun** to build now,
+It's built in the game-changing [Stack](http://docs.haskellstack.org/en/stable/README/) because it's made Haskell ~~bearable~~ **fun** to build now.
 Being a small, simple project it uses precisely _none_ of the latest GHC features it is pegged against (but _never look back_ etc).
 
 It uses the [libgit wrapper](https://hackage.haskell.org/package/libgit) for higher-order Git querying,
@@ -85,3 +83,8 @@ nor does it care about authors vs committers. The native Git version is of cours
 ### How about supporting remote Github repos?
 Yes, that might be interesting, though cloning is fast and pretty easy so of somewhat limited value.
 One of the reasons for choosing the [hs-libgit](vincenthz/hs-libgit) library was its support for multiple back-ends.
+
+
+### Can it detect self-merged PRs?
+
+No, but soon it might.

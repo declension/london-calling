@@ -23,37 +23,40 @@ import           Cli
 infixr +++
 (+++) l r = l `T.append` r
 
+-- Takes options and outputs dodgy stuff
 runApp :: CliOptions -> IO ()
 runApp (CliOptions excludes verbose dir) = withStderrLogging $ do
-   withRepository lgFactory dir $ do
-       refTarget <- lookupReference "HEAD"
-       let maybeBranch = case refTarget of
-            Just (RefSymbolic name) -> Just name
-            _ -> Nothing
-       maybeOid <- resolveReference "HEAD"
-       case maybeOid of
-           Just r -> do
-               when verbose $ log' $ "Excluding these emails: " +++ T.intercalate ", " excludes
-               let branch = fromMaybe "(unknown)" maybeBranch
-               when verbose $ log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
-               commit   <- lookupCommit (Tagged r)
-               commits <- listCommits Nothing (commitOid commit)
-               tuples  <- mapM (processCommits excludes) commits
-               let branchComs = concatMap snd tuples
-               let realCommits = mapMaybe fst tuples
-               branchHashes <- listHashes branchComs
-               when verbose $ log' ("Got these branch commits: " +++ branchHashes)
-               let dodgyCommits = filter (isKnownBranch branchComs) realCommits
-               when verbose $ log' $ T.pack $ printf "%d dodgy commits found out of %d non-merge commits"
+    when verbose $ log' $ "Excluding these emails: " +++ T.intercalate ", " excludes
+
+    withRepository lgFactory dir $ do
+        refTarget <- lookupReference "HEAD"
+        let maybeBranch = case refTarget of
+                              Just (RefSymbolic name) -> Just name
+                              _ -> Nothing
+        maybeOid <- resolveReference "HEAD"
+        case maybeOid of
+            Just r -> do
+                let branch = fromMaybe "(unknown)" maybeBranch
+                when verbose $ log' $ T.pack $ printf "Latest commit on %s is %s " branch (show r)
+                commit   <- lookupCommit (Tagged r)
+                commits <- listCommits Nothing (commitOid commit)
+                tuples  <- mapM (processCommits excludes) commits
+                let branchComs = concatMap snd tuples
+                let realCommits = mapMaybe fst tuples
+                branchHashes <- listHashes branchComs
+                when verbose $ log' ("Got these branch commits: " +++ branchHashes)
+                let dodgyCommits = filter (isKnownBranch branchComs) realCommits
+                when verbose $ log' $ T.pack $ printf "%d dodgy commits found out of %d non-merge commits"
                                               (length dodgyCommits) (length realCommits)
-               pretty <- mapM formatCommit dodgyCommits
-               mapM_ (liftIO . TIO.putStrLn) pretty
-           _ -> log' "No branch is checked out"
-   when verbose $ log' "Finished"
+                pretty <- mapM formatCommit dodgyCommits
+                mapM_ (liftIO . TIO.putStrLn) pretty
+            _ -> log' "No branch is checked out"
+    when verbose $ log' "Finished"
 
 isKnownBranch :: Eq a => [a] -> a -> Bool
 isKnownBranch = flip notElem
 
+-- Convenience method for displaying a list of short-form commits
 listHashes :: MonadGit r m => [CommitOid r] -> m T.Text
 listHashes commits = do
     hashes <- mapM (fmap T.pack . shortened) commits

@@ -15,7 +15,7 @@ cabal-version:        >=1.10
 
 executable london-calling
   main-is:              Main.hs
-  -- other-modules:
+  other-modules:        Cli
   -- other-extensions:
   build-depends:        base                   >= 4.7 && < 5
                         , logging              >= 1.3.0
